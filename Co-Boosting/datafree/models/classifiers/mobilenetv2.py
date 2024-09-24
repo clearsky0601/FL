@@ -1,6 +1,7 @@
 from torch import nn
 from torch import Tensor
-from torchvision.models.utils import load_state_dict_from_url
+# from torchvision.models.utils import load_state_dict_from_url
+from torch.hub import load_state_dict_from_url
 from typing import Callable, Any, Optional, List
 
 
