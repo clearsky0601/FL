@@ -19,6 +19,8 @@ from utils_fl import *
 import torch
 from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
+import torch.autograd.profiler as profiler
+import torch.multiprocessing as mp
 
 max_norm = 10
 
@@ -41,7 +43,7 @@ warnings.filterwarnings('ignore')
 class LocalUpdate(object):
     def __init__(self, args, dataset, idxs, logger):
         self.args = args
-        self.train_loader = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True, num_workers=4)
+        self.train_loader = DataLoader(DatasetSplit(dataset, idxs), batch_size=self.args.local_bs, shuffle=True, num_workers=8, pin_memory=True)
         self.logger = logger
 
     def update_weights(self, model, client_id):
@@ -53,18 +55,19 @@ class LocalUpdate(object):
             for batch_idx, (images, labels) in enumerate(self.train_loader):
                 images, labels = images.cuda(), labels.cuda()
                 model.zero_grad()
-                # ---------------------------------------
                 output = model(images)
                 loss = F.cross_entropy(output, labels)
                 acc += torch.sum(output.max(dim=1)[1] == labels).item()
                 total_num += len(labels)
                 train_loss += loss.item()
-                # ---------------------------------------
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_norm)
                 optimizer.step()
+                # 添加日志信息
+                if batch_idx % 10 == 0:
+                    self.logger.info(f'Iter {iter}, Batch {batch_idx}, Loss {loss.item()}')
             train_loss = train_loss / total_num; acc = acc / total_num
-            logger.info('Iter:{:4d} Train_set: Average loss: {:.4f}, Accuracy: {:.4f}'
+            self.logger.info('Iter:{:4d} Train_set: Average loss: {:.4f}, Accuracy: {:.4f}'
                     .format(iter, train_loss, acc))
             local_acc_list.append(acc)
         return model.state_dict(), np.array(local_acc_list)
